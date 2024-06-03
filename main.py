@@ -1,6 +1,7 @@
 import os
 import sys
 from bind import install_bind, uninstall_bind
+from webmin import uninstall_webmin, install_webmin
 from sys import platform
 
 
@@ -8,8 +9,11 @@ from sys import platform
 def display_menu():
     print("Select an option:")
     print("===============Bind DNS Server================")
-    print("1. Install BIND DNS Server")
-    print("2. Uninstall BIND DNS Server")
+    print("1. Install BIND DNS Server.")
+    print("2. Uninstall BIND DNS Server.")
+    print("================Webmin===============")
+    print("3. Install Webmin.")
+    print("4. Uninstall Webmin.")
     print("0. Exit")
 
     choice = input("Enter your choice: ").strip()
@@ -17,6 +21,10 @@ def display_menu():
         install_bind()
     elif choice == "2":
         uninstall_bind()
+    elif choice == "3":
+        install_webmin()
+    elif choice == "4":
+        uninstall_webmin()
     elif choice == "0":
         print("Exiting...")
         exit(0)

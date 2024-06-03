@@ -122,9 +122,9 @@ def install_bind():
     default_forwarders = "8.8.8.8,8.8.4.4"
 
     # Prompt the user for input with default values
-    DOMAIN = input("Enter your domain (e.g., example.com)")
-    REVERSE_DOMAIN = input("Enter your reverse domain (e.g., 1.168.192.in-addr.arpa)")
-    DNS_SERVER_IP = input("Enter your DNS server IP address")
+    DOMAIN = input("Enter your domain (e.g., example.com): ")
+    REVERSE_DOMAIN = input("Enter your reverse domain (e.g., 1.168.192.in-addr.arpa): ")
+    DNS_SERVER_IP = input("Enter your DNS server IP address: ")
     ADMIN_EMAIL = get_input("Enter the admin email (replace @ with .) (e.g., admin.example.com)", f"admin.{DOMAIN}")
     FORWARDERS = get_input("Enter the DNS forwarder IP addresses (comma-separated, e.g., 8.8.8.8,8.8.4.4)", default_forwarders)
 
