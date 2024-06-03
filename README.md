@@ -1,8 +1,8 @@
 # tuxfetcher
 
-TuxFetcher is a simple script allows users to download and install various linux administartion tools and scripts.
+tuxfetcher is a simple script allows users to download and install various linux administration tools.
 
-For now, TuxFetcher supports the following services:
+For now, tuxfetcher supports the following services:
 - **Bind DNS Server**
 
 ### Installation & Usage
@@ -13,8 +13,8 @@ python3 main.py
 ```
 
 ### Contributing
-Want to contribute? Fork the project and submit a pull request.
+Want to contribute? [Fork the project](https://github.com/shadowoff09/tuxfetcher/fork) and [submit a pull request](https://github.com/shadowoff09/tuxfetcher/compare).
 
 ### License
-- Apache License 2.0
+[Apache License 2.0](README.md)
 

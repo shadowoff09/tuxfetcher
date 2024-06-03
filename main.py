@@ -1,6 +1,6 @@
 import os
 import sys
-from bind import install_bind, is_dns_server_running, revert_changes
+from bind import install_bind
 from sys import platform
 
 
@@ -29,7 +29,7 @@ def display_menu():
 if __name__ == "__main__":
     # Check if the script is running on a linux based system
     if not platform.startswith('linux'):
-        print("This script must be run in a linux based system")
+        print("This script must be run in a linux based system.")
         sys.exit(1)
     # Check if the script is being run with sudo privileges
     elif os.geteuid() != 0:
