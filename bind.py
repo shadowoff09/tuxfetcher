@@ -189,19 +189,6 @@ def install_bind():
     print("/etc/bind/named.conf.local")
 
 
-# Function to revert changes made by the script
-def revert_changes():
-    # Stop BIND service
-    subprocess.run(["sudo", "service", "bind9", "stop"])
-    subprocess.run(["sudo", "systemctl", "stop", "named"])
-
-    # Remove BIND packages
-    subprocess.run(["sudo", "apt-get", "remove", "--purge", "-y", "bind9", "bind9utils", "bind9-doc"])
-
-    # Remove BIND configuration files and directories
-    subprocess.run(["sudo", "rm", "-rf", "/etc/bind"])
-
-
 # Function to check if the DNS server is running
 def is_dns_server_running():
     dns_running = False
@@ -212,3 +199,22 @@ def is_dns_server_running():
     except subprocess.CalledProcessError:
         pass
     return dns_running
+
+
+def uninstall_bind():
+    if is_dns_server_running():
+        user_wants_to_uninstall = input("The Bind DNS Server is currently running, are you sure you want to uninstall it? (y/n): ").lower()
+        if user_wants_to_uninstall == "y":
+            # Stop BIND service
+            subprocess.run(["sudo", "service", "bind9", "stop"])
+            subprocess.run(["sudo", "service", "named", "stop"])
+
+            # Remove BIND packages
+            subprocess.run(["sudo", "apt", "remove", "--purge", "-y", "bind9", "bind9utils", "bind9-doc"])
+
+            # Remove BIND configuration files and directories
+            subprocess.run(["sudo", "rm", "-rf", "/etc/bind"])
+        elif user_wants_to_uninstall == "n":
+            print("Uninstallation cancelled.")
+        else:
+            print("Invalid choice. Please enter 'y' or 'n'.")
