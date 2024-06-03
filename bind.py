@@ -9,9 +9,7 @@ def install_bind_packages():
     subprocess.run(["sudo", "apt-get", "install", "-y", "bind9", "bind9utils", "bind9-doc"])
 
 
-def configure_named_conf_options(FORWARDER_CONFIG, ENABLE_DNSSEC):
-    # If DNSSEC is enabled, set dnssec-validation to auto, otherwise set it to no
-    dnssec_config = "dnssec-validation auto;" if ENABLE_DNSSEC == "yes" else "dnssec-validation no;"
+def configure_named_conf_options(FORWARDER_CONFIG):
     named_conf_options = f"""
 options {{
     directory "/var/cache/bind";
@@ -25,7 +23,6 @@ options {{
         {FORWARDER_CONFIG}
     }};
 
-    {dnssec_config}
     auth-nxdomain no;    # conform to RFC1035
     listen-on-v6 {{ any; }};
 }};
@@ -34,20 +31,16 @@ options {{
         f.write(named_conf_options)
 
 
-def configure_named_conf_local(DOMAIN, REVERSE_DOMAIN, ENABLE_DNSSEC):
-    # If DNSSEC is enabled, set dnssec-validation to auto, otherwise set it to no
-    dnssec_zone_config = "auto-dnssec maintain; inline-signing yes;" if ENABLE_DNSSEC == "yes" else ""
+def configure_named_conf_local(DOMAIN, REVERSE_DOMAIN):
     named_conf_local = f"""
 zone "{DOMAIN}" {{
     type master;
     file "/etc/bind/zones/db.{DOMAIN}";
-    {dnssec_zone_config}
 }};
 
 zone "{REVERSE_DOMAIN}" {{
     type master;
     file "/etc/bind/zones/db.{REVERSE_DOMAIN}";
-    {dnssec_zone_config}
 }};
 """
     with open("/etc/bind/named.conf.local", "w") as f:
@@ -120,17 +113,6 @@ def restart_bind_service():
     subprocess.run(["sudo", "systemctl", "restart", "named"])
     subprocess.run(["sudo", "systemctl", "enable", "named"])
 
-
-def generate_dnssec_keys(DOMAIN, forward_zone_path):
-    # Generate DNSSEC keys for DNSSEC
-    print("Generating DNSSEC keys...")
-    subprocess.run(["sudo", "rndc", "sync"])
-    subprocess.run(["sudo", "dnssec-keygen", "-a", "ECDSAP256SHA256", "-f", "KSK", "-n", "ZONE", DOMAIN])
-    subprocess.run(["sudo", "dnssec-keygen", "-a", "ECDSAP256SHA256", "-n", "ZONE", DOMAIN])
-    subprocess.run(["sudo", "dnssec-signzone", "-A", "-3", "SALT", "-N", "INCREMENT", "-o", DOMAIN, forward_zone_path])
-    print("DNSSEC setup completed.")
-
-
 def install_bind():
     print("Welcome to the BIND DNS Server Installation Script!")
     print(
@@ -138,16 +120,13 @@ def install_bind():
 
     # Determine default values
     default_forwarders = "8.8.8.8,8.8.4.4"
-    default_dnssec = "yes"
 
     # Prompt the user for input with default values
     DOMAIN = input("Enter your domain (e.g., example.com)")
     REVERSE_DOMAIN = input("Enter your reverse domain (e.g., 1.168.192.in-addr.arpa)")
     DNS_SERVER_IP = input("Enter your DNS server IP address")
     ADMIN_EMAIL = get_input("Enter the admin email (replace @ with .) (e.g., admin.example.com)", f"admin.{DOMAIN}")
-    FORWARDERS = get_input("Enter the DNS forwarder IP addresses (comma-separated, e.g., 8.8.8.8,8.8.4.4)",
-                           default_forwarders)
-    ENABLE_DNSSEC = get_input("Do you want to enable DNSSEC? (y/n)", default_dnssec).lower()
+    FORWARDERS = get_input("Enter the DNS forwarder IP addresses (comma-separated, e.g., 8.8.8.8,8.8.4.4)", default_forwarders)
 
     # Split the forwarders string into an array and create the forwarder configuration
     FORWARDER_ARRAY = FORWARDERS.split(',')
@@ -160,10 +139,10 @@ def install_bind():
     install_bind_packages()
 
     # Configure named.conf.options
-    configure_named_conf_options(FORWARDER_CONFIG, ENABLE_DNSSEC)
+    configure_named_conf_options(FORWARDER_CONFIG)
 
     # Configure named.conf.local
-    configure_named_conf_local(DOMAIN, REVERSE_DOMAIN, ENABLE_DNSSEC)
+    configure_named_conf_local(DOMAIN, REVERSE_DOMAIN)
 
     # Create zone files
     forward_zone_path, reverse_zone_path = create_zone_files(DOMAIN, REVERSE_DOMAIN, DNS_SERVER_IP, ADMIN_EMAIL)
@@ -176,9 +155,6 @@ def install_bind():
 
     # Restart BIND service
     restart_bind_service()
-
-    if ENABLE_DNSSEC == "yes" or ENABLE_DNSSEC == "y":
-        generate_dnssec_keys(DOMAIN, forward_zone_path)
 
     print("BIND DNS server setup completed successfully.")
     print("\nThe following files and directories were created:")
