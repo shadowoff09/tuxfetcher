@@ -1,4 +1,4 @@
-import socket
+import os
 import subprocess
 
 from common import get_input, update_system
@@ -7,6 +7,7 @@ from common import get_input, update_system
 def install_bind_packages():
     print("Installing BIND packages...")
     subprocess.run(["sudo", "apt-get", "install", "-y", "bind9", "bind9utils", "bind9-doc"])
+
 
 def configure_named_conf_options(FORWARDER_CONFIG, ENABLE_DNSSEC):
     # If DNSSEC is enabled, set dnssec-validation to auto, otherwise set it to no
@@ -32,6 +33,7 @@ options {{
     with open("/etc/bind/named.conf.options", "w") as f:
         f.write(named_conf_options)
 
+
 def configure_named_conf_local(DOMAIN, REVERSE_DOMAIN, ENABLE_DNSSEC):
     # If DNSSEC is enabled, set dnssec-validation to auto, otherwise set it to no
     dnssec_zone_config = "auto-dnssec maintain; inline-signing yes;" if ENABLE_DNSSEC == "yes" else ""
@@ -50,6 +52,7 @@ zone "{REVERSE_DOMAIN}" {{
 """
     with open("/etc/bind/named.conf.local", "w") as f:
         f.write(named_conf_local)
+
 
 def create_zone_files(DOMAIN, REVERSE_DOMAIN, DNS_SERVER_IP, ADMIN_EMAIL):
     # Create the zones directory if it doesn't exist
@@ -97,10 +100,12 @@ $TTL    604800
 
     return forward_zone_path, reverse_zone_path
 
+
 def set_zone_file_permissions():
     # Set the owner and permissions for the zones directory
     subprocess.run(["sudo", "chown", "-R", "bind:bind", "/etc/bind/zones"])
     subprocess.run(["sudo", "chmod", "-R", "755", "/etc/bind/zones"])
+
 
 def check_bind_configuration(DOMAIN, REVERSE_DOMAIN, forward_zone_path, reverse_zone_path):
     # Check the BIND configuration files for syntax errors
@@ -108,11 +113,13 @@ def check_bind_configuration(DOMAIN, REVERSE_DOMAIN, forward_zone_path, reverse_
     subprocess.run(["sudo", "named-checkzone", DOMAIN, forward_zone_path])
     subprocess.run(["sudo", "named-checkzone", REVERSE_DOMAIN, reverse_zone_path])
 
+
 def restart_bind_service():
     # Restart the BIND service and enable it to start on boot
     subprocess.run(["sudo", "service", "bind9", "restart"])
     subprocess.run(["sudo", "systemctl", "restart", "named"])
     subprocess.run(["sudo", "systemctl", "enable", "named"])
+
 
 def generate_dnssec_keys(DOMAIN, forward_zone_path):
     # Generate DNSSEC keys for DNSSEC
@@ -123,22 +130,13 @@ def generate_dnssec_keys(DOMAIN, forward_zone_path):
     subprocess.run(["sudo", "dnssec-signzone", "-A", "-3", "SALT", "-N", "INCREMENT", "-o", DOMAIN, forward_zone_path])
     print("DNSSEC setup completed.")
 
-def update_dns_servers(DNS_SERVER_IP):
-    print("Updating the DNS servers of this machine to use the new DNS server...")
-    resolv_conf = f"nameserver {DNS_SERVER_IP}\n"
-    with open("/etc/resolv.conf", "w") as f:
-        f.write(resolv_conf)
-    print(f"The DNS server for this machine has been set to {DNS_SERVER_IP}")
 
 def install_bind():
     print("Welcome to the BIND DNS Server Installation Script!")
-    print("WARNING: This script is not intended for production environments, only for development and testing purposes.\n")
+    print(
+        "WARNING: This script is not intended for production environments, only for development and testing purposes.\n")
 
     # Determine default values
-    default_domain = "example.com"
-    default_dns_server_ip = socket.gethostbyname(socket.gethostname())
-    default_reverse_domain = ".".join(reversed(default_dns_server_ip.split("."))) + ".in-addr.arpa"
-    default_admin_email = f"admin.{default_domain}"
     default_forwarders = "8.8.8.8,8.8.4.4"
     default_dnssec = "yes"
 
@@ -147,7 +145,8 @@ def install_bind():
     REVERSE_DOMAIN = input("Enter your reverse domain (e.g., 1.168.192.in-addr.arpa)")
     DNS_SERVER_IP = input("Enter your DNS server IP address")
     ADMIN_EMAIL = get_input("Enter the admin email (replace @ with .) (e.g., admin.example.com)", f"admin.{DOMAIN}")
-    FORWARDERS = get_input("Enter the DNS forwarder IP addresses (comma-separated, e.g., 8.8.8.8,8.8.4.4)", default_forwarders)
+    FORWARDERS = get_input("Enter the DNS forwarder IP addresses (comma-separated, e.g., 8.8.8.8,8.8.4.4)",
+                           default_forwarders)
     ENABLE_DNSSEC = get_input("Do you want to enable DNSSEC? (y/n)", default_dnssec).lower()
 
     # Split the forwarders string into an array and create the forwarder configuration
@@ -156,7 +155,7 @@ def install_bind():
 
     # Update packages
     update_system()
-    
+
     # Install BIND packages
     install_bind_packages()
 
@@ -178,7 +177,7 @@ def install_bind():
     # Restart BIND service
     restart_bind_service()
 
-    if ENABLE_DNSSEC == "yes" | ENABLE_DNSSEC == "y":
+    if ENABLE_DNSSEC == "yes" or ENABLE_DNSSEC == "y":
         generate_dnssec_keys(DOMAIN, forward_zone_path)
 
     print("BIND DNS server setup completed successfully.")
@@ -189,7 +188,8 @@ def install_bind():
     print("/etc/bind/named.conf.options")
     print("/etc/bind/named.conf.local")
 
-# Function to revert changes made by the script   
+
+# Function to revert changes made by the script
 def revert_changes():
     # Stop BIND service
     subprocess.run(["sudo", "service", "bind9", "stop"])
@@ -200,7 +200,7 @@ def revert_changes():
 
     # Remove BIND configuration files and directories
     subprocess.run(["sudo", "rm", "-rf", "/etc/bind"])
-    subprocess.run(["sudo", "rm", "/etc/resolv.conf"])
+
 
 # Function to check if the DNS server is running
 def is_dns_server_running():
