@@ -9,7 +9,7 @@ def display_menu():
     print("Select an option:")
     print("===============Bind DNS Server================")
     print("1. Install BIND DNS Server")
-    print("2. Revert Changes (Uninstall BIND DNS Server)")
+    print("2. Uninstall BIND DNS Server")
     print("0. Exit")
 
     choice = input("Enter your choice: ").strip()
