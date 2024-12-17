@@ -1,106 +1,9 @@
 import subprocess
 import os
-import time
-import sys
-import itertools
-import threading
 import getpass
 import crypt
-from tqdm import tqdm
-from common import update_system
-
-
-class Spinner:
-    """A class to manage the spinner animation"""
-    def __init__(self):
-        self.running = False
-        self.thread = None
-
-    def start(self):
-        """Start the spinner"""
-        self.running = True
-        self.thread = threading.Thread(target=self._animate)
-        self.thread.daemon = True
-        self.thread.start()
-
-    def stop(self):
-        """Stop the spinner"""
-        self.running = False
-        if self.thread:
-            self.thread.join()
-        # Clear the spinner character
-        sys.stdout.write('\b \b')
-        sys.stdout.flush()
-
-    def _animate(self):
-        """Animate the spinner"""
-        spinner = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
-        while self.running:
-            sys.stdout.write(next(spinner))
-            sys.stdout.flush()
-            sys.stdout.write('\b')
-            time.sleep(0.1)
-
-
-def run_command_with_progress(command: list, description: str, time_estimate: int = 3, show_output: bool = False):
-    """Run a command with a progress bar and spinner"""
-    spinner = Spinner()
-    
-    with tqdm(total=100, 
-             desc=f"{description}", 
-             bar_format='{desc:<30} |{bar:30}| {percentage:3.0f}% {postfix}',
-             unit='%') as pbar:
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            universal_newlines=True
-        )
-        
-        # Start the spinner
-        spinner.start()
-        
-        try:
-            # Simulate progress while command is running
-            progress = 0
-            increment = 100 / (time_estimate * 4)  # Update 4 times per second
-            
-            while process.poll() is None and progress < 95:
-                # Read output without blocking
-                stdout_line = process.stdout.readline()
-                stderr_line = process.stderr.readline()
-                
-                if show_output:
-                    if stdout_line:
-                        tqdm.write(f"Output: {stdout_line.strip()}")
-                    if stderr_line:
-                        tqdm.write(f"Error: {stderr_line.strip()}")
-                
-                time.sleep(0.25)
-                progress += increment
-                pbar.update(min(increment, 95 - pbar.n))
-                pbar.set_postfix_str("⋯")
-            
-            # Get remaining output
-            stdout, stderr = process.communicate()
-            if show_output and (stdout or stderr):
-                tqdm.write(f"Final output: {stdout}\nErrors: {stderr}")
-            
-            # Complete the progress bar
-            if process.returncode == 0:
-                pbar.update(100 - pbar.n)
-                pbar.set_postfix_str("✓")
-            else:
-                error_msg = stderr.strip() if stderr else "Unknown error"
-                raise subprocess.CalledProcessError(process.returncode, command, stderr=error_msg)
-            
-            return process.returncode
-            
-        finally:
-            # Always stop the spinner
-            spinner.stop()
+from common.colors import Colors
+from common.utils import update_system, update_system, run_command, update_repositories, wait_for_enter
 
 
 def get_root_password():
@@ -114,36 +17,24 @@ def get_root_password():
         return False
 
 
-def setup_webmin_repository(show_output: bool = False):
+def setup_webmin_repository():
     """Set up Webmin repository manually without using the setup script"""
     try:
         # Add Webmin GPG key
-        run_command_with_progress(
-            ["sudo", "curl", "-fsSL", "http://www.webmin.com/jcameron-key.asc", "-o", "/usr/share/keyrings/webmin-keyring.asc"],
-            "Downloading Webmin GPG key",
-            5,
-            show_output
-        )
+        print("\n🔑 Adding Webmin GPG key...")
+        run_command(["sudo", "curl", "-fsSL", "http://www.webmin.com/jcameron-key.asc", "-o", "/usr/share/keyrings/webmin-keyring.asc"])
 
-        # Add Webmin repository
+        # Add Webmin repository to sources list
+        print("\n📝 Adding Webmin repository to sources list...")
         repo_line = "deb [signed-by=/usr/share/keyrings/webmin-keyring.asc] http://download.webmin.com/download/repository sarge contrib"
         with open("/tmp/webmin.list", "w") as f:
             f.write(repo_line)
         
-        run_command_with_progress(
-            ["sudo", "mv", "/tmp/webmin.list", "/etc/apt/sources.list.d/webmin.list"],
-            "Adding Webmin repository",
-            2,
-            show_output
-        )
+        run_command(["sudo", "mv", "/tmp/webmin.list", "/etc/apt/sources.list.d/webmin.list"])
 
         # Update package list
-        run_command_with_progress(
-            ["sudo", "apt-get", "update"],
-            "Updating package list",
-            10,
-            show_output
-        )
+        print("\n🔄 Updating package list...")
+        update_repositories()
 
         return True
     except Exception as e:
@@ -151,66 +42,36 @@ def setup_webmin_repository(show_output: bool = False):
         return False
 
 
-def get_user_output_preference():
-    """Ask user if they want to see command output"""
-    while True:
-        choice = input("\nDo you want to see detailed command output? (y/n): ").lower().strip()
-        if choice in ['y', 'n']:
-            return choice == 'y'
-        print("Please enter 'y' for yes or 'n' for no.")
-
-
-def create_webmin_user(show_output: bool = False):
+def create_webmin_user():
     """Create a dedicated user for Webmin"""
+    username = "webmin"
+    password = "webmin"
+
     try:
-        while True:
-            create_user = input("\nDo you want to create a dedicated user for Webmin? (y/n): ").lower().strip()
-            if create_user in ['y', 'n']:
-                break
-            print("Please enter 'y' for yes or 'n' for no.")
+        # Create system user if doesn't exist
+        encrypted_pass = crypt.crypt(password)
+        print("\n📝 Creating user account...")
+        
+        # Try to create user, ignore if exists
+        run_command(
+            ["sudo", "useradd", "-m", "-s", "/bin/bash", "-p", encrypted_pass, username],
+            check=False
+        )
+        
+        print(f"\n{Colors.GREEN}✅ User account created successfully.{Colors.ENDC}")
 
-        if create_user == 'y':
-            while True:
-                username = input("\nEnter username for Webmin: ").strip()
-                if username and not ' ' in username and len(username) >= 3:
-                    break
-                print("Username must be at least 3 characters and contain no spaces.")
+        # Add user to sudo group for Webmin access
+        print("\n📝 Adding user to sudo group...")
+        run_command(
+            ["sudo", "usermod", "-aG", "sudo", username],
+            check=False
+        )
+        print(f"\n{Colors.GREEN}✅ User added to sudo group successfully.{Colors.ENDC}")
 
-            while True:
-                password = getpass.getpass("Enter password for Webmin user: ")
-                if len(password) >= 8:
-                    password_confirm = getpass.getpass("Confirm password: ")
-                    if password == password_confirm:
-                        break
-                    print("Passwords do not match. Please try again.")
-                else:
-                    print("Password must be at least 8 characters long.")
-
-            # Create system user
-            encrypted_pass = crypt.crypt(password)
-            print("\n📝 Creating user account...")
-            
-            run_command_with_progress(
-                ["sudo", "useradd", "-m", "-s", "/bin/bash", "-p", encrypted_pass, username],
-                "Creating user account",
-                3,
-                show_output
-            )
-
-            # Add user to sudo group for Webmin access
-            run_command_with_progress(
-                ["sudo", "usermod", "-aG", "sudo", username],
-                "Adding user to sudo group",
-                2,
-                show_output
-            )
-
-            return username, password
+        return username, password
     except Exception as e:
-        print(f"\n❌ Error creating Webmin user: {str(e)}")
-        return None, None
-
-    return None, None
+        # Continue silently if there are any errors
+        return username, password
 
 
 def show_login_instructions(webmin_user=None, webmin_pass=None):
@@ -240,53 +101,174 @@ def show_login_instructions(webmin_user=None, webmin_pass=None):
 
 
 def install_webmin():
-    """Install Webmin with progress bars"""
+    """Install Webmin"""
+    if is_webmin_installed():
+        print(f"\n{Colors.RED}❌ Webmin is already installed.{Colors.ENDC}")
+        wait_for_enter()
+        return
+    
     try:
         print("\n📦 Installing Webmin...")
         
-        # Ask user about output visibility
-        show_output = get_user_output_preference()
-        if show_output:
-            print("\n⚠️  Detailed command output will be shown.")
-        else:
-            print("\n⚠️  Only progress bars will be shown.")
-        
         # Update system
-        run_command_with_progress(
-            ["sudo", "apt-get", "update"],
-            "Updating system",
-            10,
-            show_output
-        )
+        update_system()
         
         # Set up Webmin repository
-        print("\n⚙️  Setting up Webmin repository...")
-        if not setup_webmin_repository(show_output):
+        print(f"\n{Colors.BLUE}⚙️  Setting up Webmin repository...{Colors.ENDC}")
+        if not setup_webmin_repository():
             raise Exception("Failed to set up Webmin repository")
+        print(f"\n{Colors.GREEN}✅ Webmin repository set up successfully.{Colors.ENDC}")
+        
         
         # Install Webmin with output display
-        print("\n📥 Installing Webmin packages...")
-        run_command_with_progress(
-            ["sudo", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "webmin", "--install-recommends"],
-            "Installing Webmin packages",
-            60,
-            show_output
-        )
+        print(f"\n{Colors.BLUE}📥 Installing Webmin packages...{Colors.ENDC}")        
+        run_command(["sudo", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "webmin", "--install-recommends"])
+        print(f"\n{Colors.GREEN}✅ Webmin packages installed successfully.{Colors.ENDC}")
         
         # Create Webmin user if requested
-        webmin_user, webmin_pass = create_webmin_user(show_output)
+        webmin_user, webmin_pass = create_webmin_user()
         
-        print("\n✅ Webmin installation completed successfully!")
+        print(f"\n{Colors.GREEN}✅ Webmin installation completed successfully!{Colors.ENDC}")
         show_login_instructions(webmin_user, webmin_pass)
+        wait_for_enter()
+        
         
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Error during installation: {e.stderr}")
+        print(f"\n{Colors.RED}❌ Error during installation: {e.stderr}{Colors.ENDC}")
         raise
     except Exception as e:
-        print(f"\n❌ Error during installation: {str(e)}")
+        print(f"\n{Colors.RED}❌ Error during installation: {str(e)}{Colors.ENDC}")
         raise
 
+def stop_webmin_service():
+    """Stop the Webmin service"""
+    if not is_webmin_installed():
+        print(f"\n{Colors.RED}❌ Webmin is not installed.{Colors.ENDC}")
+        wait_for_enter()
+        return
+    
+    if not is_webmin_running():
+        print(f"\n{Colors.RED}❌ Webmin is not running.{Colors.ENDC}")
+        wait_for_enter()
+        return
+    
+    try:
+        run_command(["sudo", "systemctl", "stop", "webmin"])
+        print(f"\n{Colors.GREEN}✅ Webmin service stopped successfully.{Colors.ENDC}")
+        wait_for_enter()
+        return True
+    except subprocess.CalledProcessError:
+        print("⚠️ Warning: Could not stop Webmin service. Continuing with uninstallation...")
+        return False
+    
+def start_webmin_service():
+    """Start the Webmin service"""
+    if not is_webmin_installed():
+        print(f"\n{Colors.RED}❌ Webmin is not installed.{Colors.ENDC}")
+        wait_for_enter()
+        return
+    
+    if is_webmin_running():
+        print(f"\n{Colors.RED}❌ Webmin service is already running.{Colors.ENDC}")
+        wait_for_enter()
+        return
+    
+    try:
+        run_command(["sudo", "systemctl", "start", "webmin"])
+        print(f"\n{Colors.GREEN}✅ Webmin service started successfully.{Colors.ENDC}")
+        wait_for_enter()
+        return True
+    except subprocess.CalledProcessError:
+        return False
+    
+def restart_webmin_service():
+    """Restart the Webmin service"""
+    try:
+        run_command(["sudo", "systemctl", "restart", "webmin"])
+        print(f"\n{Colors.GREEN}✅ Webmin service restarted successfully.{Colors.ENDC}")
+        wait_for_enter()
+        return True
+    except subprocess.CalledProcessError:
+        return False
+    
+def check_webmin_status():
+    """Check the status of the Webmin service"""
+    if not is_webmin_installed():
+        print(f"\n{Colors.RED}❌ Webmin is not installed.{Colors.ENDC}")
+        wait_for_enter()
+        return
+    
+    try:
+        result = subprocess.run(["sudo", "systemctl", "status", "webmin"], capture_output=True, text=True)
+        status_lines = result.stdout.split('\n')
+        
+        # Extract active status and PID
+        status_line = next((line for line in status_lines if "Active:" in line), "")
+        pid_line = next((line for line in status_lines if "Main PID:" in line), "")
+        
+        if status_line and pid_line:
+            status = "🟢 Running" if "active (running)" in status_line else "🔴 Stopped"
+            pid = pid_line.split(':')[1].strip()
+            
+            print(f"\n{Colors.HEADER}{Colors.BOLD}{'═' * 15} Webmin Status {'═' * 15}{Colors.ENDC}")
+            print(f"Status: {status}")
+            print(f"PID: {pid}")
+            print(f"{Colors.HEADER}{Colors.BOLD}{'═' * 45}{Colors.ENDC}")
+        else:
+            print(f"\n{Colors.RED}❌ Unable to get Webmin status{Colors.ENDC}")
+            
+        wait_for_enter()
+        return True
+    except subprocess.CalledProcessError:
+        print(f"\n{Colors.RED}❌ Failed to get Webmin status{Colors.ENDC}")
+        wait_for_enter()
+        return False
 
+
+def uninstall_webmin():
+    """Uninstall Webmin and clean up related files with progress bars"""
+    if not is_webmin_installed():
+        print(f"\n{Colors.YELLOW}⚠️  Webmin is not installed.{Colors.ENDC}")
+        wait_for_enter()
+        return
+
+    try:
+        print(f"\n{Colors.BLUE}🗑️  Uninstalling Webmin...{Colors.ENDC}")
+        
+        # Stop service if running
+        stop_webmin_service()
+    
+        # Remove Webmin packages with output display
+        print(f"\n{Colors.BLUE}🗑️  Removing Webmin packages...{Colors.ENDC}")
+        run_command(["sudo", "DEBIAN_FRONTEND=noninteractive", "apt-get", "remove", "--purge", "-y", "webmin"])
+        print(f"\n{Colors.GREEN}✅ Webmin packages removed successfully.{Colors.ENDC}")
+        
+        print(f"\n{Colors.BLUE}🗑️  Removing Webmin dependecies...{Colors.ENDC}")
+        run_command(["sudo", "apt-get", "autoremove", "-y"])
+        print(f"\n{Colors.GREEN}✅ Webmin dependecies removed successfully.{Colors.ENDC}")
+
+        # Remove repository and configuration files
+        if os.path.exists("/etc/apt/sources.list.d/webmin.list"):
+            print(f"\n{Colors.BLUE}🗑️  Removing Webmin repository{Colors.ENDC}")            
+            run_command(["sudo", "rm", "-f", "/etc/apt/sources.list.d/webmin.list"])
+            print(f"\n{Colors.GREEN}✅ Webmin repository removed successfully.{Colors.ENDC}")
+        # Remove configuration directories
+        for path in ["/etc/webmin", "/var/webmin", "/var/log/webmin"]:
+            if os.path.exists(path):
+                print(f"\n{Colors.BLUE}🗑️  Removing {path}{Colors.ENDC}")                
+                run_command(["sudo", "rm", "-rf", path])
+                print(f"\n{Colors.GREEN}✅ {path} removed successfully.{Colors.ENDC}")
+
+        # Update package list
+        update_repositories()
+        
+        print(f"\n{Colors.GREEN}✅ Webmin has been successfully uninstalled and all related files have been removed.{Colors.ENDC}")
+        wait_for_enter()
+        
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ Error during uninstallation: {e.stderr}")
+        raise
+    
 def is_webmin_installed():
     """Check if Webmin is installed"""
     try:
@@ -294,87 +276,11 @@ def is_webmin_installed():
         return "ii  webmin" in result.stdout
     except subprocess.CalledProcessError:
         return False
-
-
-def stop_webmin_service():
-    """Stop the Webmin service"""
+    
+def is_webmin_running():
+    """Check if Webmin is running"""
     try:
-        run_command_with_progress(
-            ["sudo", "systemctl", "stop", "webmin"],
-            "Stopping Webmin service",
-            5
-        )
-        return True
+        result = subprocess.run(["systemctl", "is-active", "webmin"], capture_output=True, text=True)
+        return result.returncode == 0
     except subprocess.CalledProcessError:
         return False
-
-
-def uninstall_webmin():
-    """Uninstall Webmin and clean up related files with progress bars"""
-    if not is_webmin_installed():
-        print("\n⚠️ Webmin is not installed.")
-        return
-
-    try:
-        print("\n🗑️ Uninstalling Webmin...")
-        
-        # Ask user about output visibility
-        show_output = get_user_output_preference()
-        if show_output:
-            print("\n⚠️  Detailed command output will be shown.")
-        else:
-            print("\n⚠️  Only progress bars will be shown.")
-        
-        # Stop service
-        if stop_webmin_service():
-            print("✅ Webmin service stopped successfully.")
-        else:
-            print("⚠️ Warning: Could not stop Webmin service. Continuing with uninstallation...")
-
-        # Remove Webmin packages with output display
-        run_command_with_progress(
-            ["sudo", "DEBIAN_FRONTEND=noninteractive", "apt-get", "remove", "--purge", "-y", "webmin"],
-            "Removing Webmin packages",
-            15,
-            show_output
-        )
-        
-        run_command_with_progress(
-            ["sudo", "apt-get", "autoremove", "-y"],
-            "Removing dependencies",
-            10,
-            show_output
-        )
-
-        # Remove repository and configuration files
-        if os.path.exists("/etc/apt/sources.list.d/webmin.list"):
-            run_command_with_progress(
-                ["sudo", "rm", "-f", "/etc/apt/sources.list.d/webmin.list"],
-                "Removing Webmin repository",
-                2,
-                show_output
-            )
-
-        # Remove configuration directories
-        for path in ["/etc/webmin", "/var/webmin", "/var/log/webmin"]:
-            if os.path.exists(path):
-                run_command_with_progress(
-                    ["sudo", "rm", "-rf", path],
-                    f"Removing {path}",
-                    3,
-                    show_output
-                )
-
-        # Update package list
-        run_command_with_progress(
-            ["sudo", "apt-get", "update"],
-            "Updating package list",
-            10,
-            show_output
-        )
-
-        print("\n✅ Webmin has been successfully uninstalled and all related files have been removed.")
-        
-    except subprocess.CalledProcessError as e:
-        print(f"\n❌ Error during uninstallation: {e.stderr}")
-        raise

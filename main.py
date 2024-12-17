@@ -1,10 +1,21 @@
 import os
 import sys
-import subprocess
-from bind import install_bind, uninstall_bind
-from webmin import install_webmin, uninstall_webmin
+import platform
+from webmin import install_webmin, uninstall_webmin, stop_webmin_service, start_webmin_service, restart_webmin_service, check_webmin_status
+from common.utils import wait_for_enter
 from common.colors import Colors
 
+def check_admin_privileges():
+    """Check if the script is run with admin privileges"""
+    if os.geteuid() != 0:
+        print(f"\n{Colors.FAIL}❌ This script must be run as root. Please try again with 'sudo'.{Colors.ENDC}\n")
+        sys.exit(1)
+
+def check_linux_os():
+    """Check if the script is running on a Linux system"""
+    if platform.system() != "Linux":
+        print(f"\n{Colors.FAIL}❌ This script is intended to run on Linux systems only.{Colors.ENDC}\n")
+        sys.exit(1)
 
 def print_header():
     """Print the application header"""
@@ -15,84 +26,6 @@ def print_header():
     print("╚════════════════════════════════════════════╝")
     print(f"{Colors.ENDC}")
 
-
-def check_bind_status() -> tuple[bool, str]:
-    """Check if BIND DNS Server is running and get its PID"""
-    try:
-        result = subprocess.run(
-            ["systemctl", "is-active", "bind9"],
-            capture_output=True,
-            text=True
-        )
-        if result.stdout.strip() == "active":
-            # Get PID
-            pid_result = subprocess.run(
-                ["systemctl", "show", "--property=MainPID", "bind9"],
-                capture_output=True,
-                text=True
-            )
-            pid = pid_result.stdout.split('=')[1].strip()
-            return True, pid
-        return False, ""
-    except Exception:
-        return False, ""
-
-
-def check_webmin_status() -> tuple[bool, str]:
-    """Check if Webmin is running and get its PID"""
-    try:
-        # First try using systemctl
-        result = subprocess.run(
-            ["systemctl", "is-active", "webmin"],
-            capture_output=True,
-            text=True
-        )
-        if result.stdout.strip() == "active":
-            # Get PID from systemctl
-            pid_result = subprocess.run(
-                ["systemctl", "show", "--property=MainPID", "webmin"],
-                capture_output=True,
-                text=True
-            )
-            pid = pid_result.stdout.split('=')[1].strip()
-            if pid != "0":
-                return True, pid
-        
-        # If systemctl didn't work, try checking the process directly
-        ps_result = subprocess.run(
-            ["pgrep", "-f", "miniserv.pl"],
-            capture_output=True,
-            text=True
-        )
-        if ps_result.stdout:
-            return True, ps_result.stdout.strip()
-        
-        return False, ""
-    except Exception:
-        return False, ""
-
-
-def print_status():
-    """Print current status of services"""
-    print(f"\n{Colors.BOLD}System Status:{Colors.ENDC}")
-    
-    # Check BIND status
-    bind_running, bind_pid = check_bind_status()
-    if bind_running:
-        print(f"{Colors.GREEN}● BIND DNS Server is running (PID: {bind_pid}){Colors.ENDC}")
-    else:
-        print(f"{Colors.WARNING}○ BIND DNS Server is not running{Colors.ENDC}")
-    
-    # Check Webmin status
-    webmin_running, webmin_pid = check_webmin_status()
-    if webmin_running:
-        print(f"{Colors.GREEN}● Webmin is running (PID: {webmin_pid}){Colors.ENDC}")
-    else:
-        print(f"{Colors.WARNING}○ Webmin is not running{Colors.ENDC}")
-    
-    print(f"{Colors.HEADER}{Colors.BOLD}{'═' * 40}{Colors.ENDC}")
-
-
 def print_category(name: str):
     """Print a category header"""
     print(f"\n{Colors.HEADER}{Colors.BOLD}{'═' * 15} {name} {'═' * 15}{Colors.ENDC}")
@@ -100,38 +33,71 @@ def print_category(name: str):
 
 def print_menu():
     """Print the main menu"""
-    print_status()
+    print_category("Main Menu")
+    print(f"{Colors.BLUE}1.{Colors.ENDC} Webmin Management")
+    print(f"{Colors.BLUE}2.{Colors.ENDC} [Other Main Option]")
     
-    print_category("DNS Server")
-    print(f"{Colors.WHITE}1.{Colors.ENDC} Install BIND DNS Server")
-    print(f"{Colors.WHITE}2.{Colors.ENDC} Uninstall BIND DNS Server")
-    
-    print_category("Webmin")
-    print(f"{Colors.WHITE}3.{Colors.ENDC} Install Webmin")
-    print(f"{Colors.WHITE}4.{Colors.ENDC} Uninstall Webmin")
-    
-    print(f"\n{Colors.WHITE}0.{Colors.ENDC} Exit")
-    print(f"{Colors.HEADER}{Colors.BOLD}{'═' * 40}{Colors.ENDC}")
+    print(f"\n{Colors.RED}0.{Colors.ENDC} Exit")
+    print(f"{Colors.HEADER}{Colors.BOLD}{'═' * 41}{Colors.ENDC}")
 
+def print_webmin_menu():
+    """Print the Webmin submenu"""
+    print_category("Webmin Management")
+    print(f"{Colors.BLUE}1.{Colors.ENDC} Install Webmin")
+    print(f"{Colors.BLUE}2.{Colors.ENDC} Uninstall Webmin")
+    print(f"{Colors.BLUE}3.{Colors.ENDC} Start Webmin Service")
+    print(f"{Colors.BLUE}4.{Colors.ENDC} Stop Webmin Service")
+    print(f"{Colors.BLUE}5.{Colors.ENDC} Restart Webmin Service")
+    print(f"{Colors.BLUE}6.{Colors.ENDC} Check Webmin Status")
+    
+    print(f"\n{Colors.RED}0.{Colors.ENDC} Back to Main Menu")
+    print(f"{Colors.HEADER}{Colors.BOLD}{'═' * 49}{Colors.ENDC}")
+
+def handle_webmin_menu():
+    """Handle Webmin submenu choices"""
+    while True:
+        print_header()
+        print_webmin_menu()
+        choice = input(f"\n{Colors.BOLD}Enter your choice (0-6): {Colors.ENDC}")
+        
+        try:
+            if choice == "1":
+                install_webmin()
+            elif choice == "2":
+                uninstall_webmin()
+            elif choice == "3":
+                start_webmin_service()
+            elif choice == "4":
+                stop_webmin_service()
+            elif choice == "5":
+                restart_webmin_service()
+            elif choice == "6":
+                check_webmin_status()
+            elif choice == "0":
+                return
+            else:
+                print(f"\n{Colors.FAIL}❌ Invalid choice. Please try again.{Colors.ENDC}")
+                wait_for_enter()
+            
+        except Exception as e:
+            print(f"\n{Colors.FAIL}❌ An error occurred: {str(e)}{Colors.ENDC}")
+            input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
 
 def handle_choice(choice: str):
-    """Handle user menu choice"""
+    """Handle main menu choices"""
     try:
         if choice == "1":
-            install_bind()
+            handle_webmin_menu()
         elif choice == "2":
-            uninstall_bind()
-        elif choice == "3":
-            install_webmin()
-        elif choice == "4":
-            uninstall_webmin()
+            # Handle other main menu option
+            pass
         elif choice == "0":
             print(f"\n{Colors.GREEN}👋 Thank you for using TuxFetcher!{Colors.ENDC}")
             sys.exit(0)
         else:
             print(f"\n{Colors.FAIL}❌ Invalid choice. Please try again.{Colors.ENDC}")
+            wait_for_enter()
         
-        input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.ENDC}")
         
     except Exception as e:
         print(f"\n{Colors.FAIL}❌ An error occurred: {str(e)}{Colors.ENDC}")
@@ -140,6 +106,8 @@ def handle_choice(choice: str):
 
 def main():
     """Main application loop"""
+    check_admin_privileges()
+    check_linux_os()
     while True:
         print_header()
         print_menu()
